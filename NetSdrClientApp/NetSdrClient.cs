@@ -1,59 +1,56 @@
-﻿using NetSdrClientApp.Messages;
+using NetSdrClientApp.Messages;
 using NetSdrClientApp.Networking;
 using System;
 using System.Collections.Generic;
+using System.IO;
 using System.Linq;
-using System.Text;
-using System.Threading;
-using System.Threading.Channels;
 using System.Threading.Tasks;
 using static NetSdrClientApp.Messages.NetSdrMessageHelper;
-using static System.Runtime.InteropServices.JavaScript.JSType;
 
 namespace NetSdrClientApp
 {
     public class NetSdrClient
     {
-        private ITcpClient _tcpClient;
-        private IUdpClient _udpClient;
+        private readonly ITcpClient _tcpClient;
+        private readonly IUdpClient _udpClient;
+        private TaskCompletionSource<byte[]>? _responseTaskSource;
 
-        public bool IQStarted { get; set; }
+        public bool IQStarted { get; private set; }
 
         public NetSdrClient(ITcpClient tcpClient, IUdpClient udpClient)
         {
-            _tcpClient = tcpClient;
-            _udpClient = udpClient;
+            _tcpClient = tcpClient ?? throw new ArgumentNullException(nameof(tcpClient));
+            _udpClient = udpClient ?? throw new ArgumentNullException(nameof(udpClient));
 
-            _tcpClient.MessageReceived += _tcpClient_MessageReceived;
-            _udpClient.MessageReceived += _udpClient_MessageReceived;
+            _tcpClient.MessageReceived += TcpClient_MessageReceived;
+            _udpClient.MessageReceived += UdpClient_MessageReceived;
         }
 
         public async Task ConnectAsync()
         {
-            if (!_tcpClient.Connected)
+            if (_tcpClient.Connected)
+                return;
+
+            _tcpClient.Connect();
+
+            var sampleRate = BitConverter.GetBytes((long)100000).Take(5).ToArray();
+            var automaticFilterMode = BitConverter.GetBytes((ushort)0).ToArray();
+            var adMode = new byte[] { 0x00, 0x03 };
+
+            var messages = new List<byte[]>
             {
-                _tcpClient.Connect();
+                NetSdrMessageHelper.GetControlItemMessage(MsgTypes.SetControlItem, ControlItemCodes.IQOutputDataSampleRate, sampleRate),
+                NetSdrMessageHelper.GetControlItemMessage(MsgTypes.SetControlItem, ControlItemCodes.RFFilter, automaticFilterMode),
+                NetSdrMessageHelper.GetControlItemMessage(MsgTypes.SetControlItem, ControlItemCodes.ADModes, adMode),
+            };
 
-                var sampleRate = BitConverter.GetBytes((long)100000).Take(5).ToArray();
-                var automaticFilterMode = BitConverter.GetBytes((ushort)0).ToArray();
-                var adMode = new byte[] { 0x00, 0x03 };
-
-                //Host pre setup
-                var msgs = new List<byte[]>
-                {
-                    NetSdrMessageHelper.GetControlItemMessage(MsgTypes.SetControlItem, ControlItemCodes.IQOutputDataSampleRate, sampleRate),
-                    NetSdrMessageHelper.GetControlItemMessage(MsgTypes.SetControlItem, ControlItemCodes.RFFilter, automaticFilterMode),
-                    NetSdrMessageHelper.GetControlItemMessage(MsgTypes.SetControlItem, ControlItemCodes.ADModes, adMode),
-                };
-
-                foreach (var msg in msgs)
-                {
-                    await SendTcpRequest(msg);
-                }
+            foreach (var msg in messages)
+            {
+                await SendTcpRequest(msg).ConfigureAwait(false);
             }
         }
 
-        public void Disconect()
+        public void Disconnect()
         {
             _tcpClient.Disconnect();
         }
@@ -70,15 +67,12 @@ namespace NetSdrClientApp
             var start = (byte)0x02;
             var fifo16bitCaptureMode = (byte)0x01;
             var n = (byte)1;
-
             var args = new[] { iqDataMode, start, fifo16bitCaptureMode, n };
 
             var msg = NetSdrMessageHelper.GetControlItemMessage(MsgTypes.SetControlItem, ControlItemCodes.ReceiverState, args);
-            
-            await SendTcpRequest(msg);
+            await SendTcpRequest(msg).ConfigureAwait(false);
 
             IQStarted = true;
-
             _ = _udpClient.StartListeningAsync();
         }
 
@@ -91,15 +85,12 @@ namespace NetSdrClientApp
             }
 
             var stop = (byte)0x01;
-
             var args = new byte[] { 0, stop, 0, 0 };
-
             var msg = NetSdrMessageHelper.GetControlItemMessage(MsgTypes.SetControlItem, ControlItemCodes.ReceiverState, args);
 
-            await SendTcpRequest(msg);
+            await SendTcpRequest(msg).ConfigureAwait(false);
 
             IQStarted = false;
-
             _udpClient.StopListening();
         }
 
@@ -110,56 +101,53 @@ namespace NetSdrClientApp
             var args = new[] { channelArg }.Concat(frequencyArg).ToArray();
 
             var msg = NetSdrMessageHelper.GetControlItemMessage(MsgTypes.SetControlItem, ControlItemCodes.ReceiverFrequency, args);
-
-            await SendTcpRequest(msg);
+            await SendTcpRequest(msg).ConfigureAwait(false);
         }
 
-        private void _udpClient_MessageReceived(object? sender, byte[] e)
+        private void UdpClient_MessageReceived(object? sender, byte[] e)
         {
+            if (e == null || e.Length == 0)
+                return;
+
             NetSdrMessageHelper.TranslateMessage(e, out MsgTypes type, out ControlItemCodes code, out ushort sequenceNum, out byte[] body);
             var samples = NetSdrMessageHelper.GetSamples(16, body);
 
-            Console.WriteLine($"Samples recieved: " + body.Select(b => Convert.ToString(b, toBase: 16)).Aggregate((l, r) => $"{l} {r}"));
+            Console.WriteLine($"Samples received: {string.Join(" ", body.Select(b => b.ToString("X2")))}");
 
-            using (FileStream fs = new FileStream("samples.bin", FileMode.Append, FileAccess.Write, FileShare.Read))
-            using (BinaryWriter sw = new BinaryWriter(fs))
+            const string SampleFileName = "samples.bin";
+            using (var fs = new FileStream(SampleFileName, FileMode.Append, FileAccess.Write, FileShare.Read))
+            using (var bw = new BinaryWriter(fs))
             {
                 foreach (var sample in samples)
                 {
-                    sw.Write((short)sample); //write 16 bit per sample as configured 
+                    bw.Write((short)sample);
                 }
             }
         }
-
-        private TaskCompletionSource<byte[]> responseTaskSource;
 
         private async Task<byte[]> SendTcpRequest(byte[] msg)
         {
             if (!_tcpClient.Connected)
             {
                 Console.WriteLine("No active connection.");
-                return null;
+                return Array.Empty<byte>();
             }
 
-            responseTaskSource = new TaskCompletionSource<byte[]>(TaskCreationOptions.RunContinuationsAsynchronously);
-            var responseTask = responseTaskSource.Task;
+            _responseTaskSource = new TaskCompletionSource<byte[]>(TaskCreationOptions.RunContinuationsAsynchronously);
+            await _tcpClient.SendMessageAsync(msg).ConfigureAwait(false);
 
-            await _tcpClient.SendMessageAsync(msg);
-
-            var resp = await responseTask;
-
-            return resp;
+            return await _responseTaskSource.Task.ConfigureAwait(false);
         }
 
-        private void _tcpClient_MessageReceived(object? sender, byte[] e)
+        private void TcpClient_MessageReceived(object? sender, byte[] e)
         {
-            //TODO: add Unsolicited messages handling here
-            if (responseTaskSource != null)
+            if (_responseTaskSource != null)
             {
-                responseTaskSource.SetResult(e);
-                responseTaskSource = null;
+                _responseTaskSource.SetResult(e);
+                _responseTaskSource = null;
             }
-            Console.WriteLine("Response recieved: " + e.Select(b => Convert.ToString(b, toBase: 16)).Aggregate((l, r) => $"{l} {r}"));
+
+            Console.WriteLine($"Response received: {string.Join(" ", e.Select(b => b.ToString("X2")))}");
         }
     }
 }
