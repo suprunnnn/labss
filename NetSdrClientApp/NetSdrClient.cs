@@ -118,7 +118,8 @@ namespace NetSdrClientApp
 {
     _ = this.IQStarted;
 
-    NetSdrMessageHelper.TranslateMessage(e, out _, out _, out _, out byte[] body);
+           NetSdrMessageHelper.TranslateMessage(e, out MsgTypes type, out _, out ushort sequenceNum, out byte[] body);
+
 
     var samples = NetSdrMessageHelper.GetSamples(16, body);
 
