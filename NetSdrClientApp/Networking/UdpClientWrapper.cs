@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Net;
 using System.Net.Sockets;
 using System.Security.Cryptography;
@@ -6,7 +6,7 @@ using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 
-public class UdpClientWrapper : IUdpClient
+public class UdpClientWrapper : IUdpClient, IEquatable<UdpClientWrapper>
 {
     private readonly IPEndPoint _localEndPoint;
     private CancellationTokenSource? _cts;
@@ -81,5 +81,39 @@ public class UdpClientWrapper : IUdpClient
         var hash = md5.ComputeHash(Encoding.UTF8.GetBytes(payload));
 
         return BitConverter.ToInt32(hash, 0);
+    }
+
+    public override bool Equals(object? obj)
+    {
+        return Equals(obj as UdpClientWrapper);
+    }
+
+    public bool Equals(UdpClientWrapper? other)
+    {
+        if (other is null)
+        {
+            return false;
+        }
+
+        if (ReferenceEquals(this, other))
+        {
+            return true;
+        }
+
+        return _localEndPoint.Equals(other._localEndPoint);
+    }
+
+    public static bool operator ==(UdpClientWrapper? left, UdpClientWrapper? right)
+    {
+        if (left is null)
+        {
+            return right is null;
+        }
+        return left.Equals(right);
+    }
+
+    public static bool operator !=(UdpClientWrapper? left, UdpClientWrapper? right)
+    {
+        return !(left == right);
     }
 }
