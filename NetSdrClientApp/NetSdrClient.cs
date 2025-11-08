@@ -1,4 +1,4 @@
-﻿using NetSdrClientApp.Messages;
+using NetSdrClientApp.Messages;
 using NetSdrClientApp.Networking;
 using System;
 using System.Collections.Generic;
@@ -66,7 +66,7 @@ namespace NetSdrClientApp
                 return;
             }
 
-;           var iqDataMode = (byte)0x80;
+            var iqDataMode = (byte)0x80;
             var start = (byte)0x02;
             var fifo16bitCaptureMode = (byte)0x01;
             var n = (byte)1;
@@ -114,26 +114,24 @@ namespace NetSdrClientApp
             await SendTcpRequest(msg);
         }
 
-       private void _udpClient_MessageReceived(object? sender, byte[] e)
-{
-    _ = this.IQStarted;
-
-    NetSdrMessageHelper.TranslateMessage(e, out _, out _, out _, out byte[] body);
-
-    var samples = NetSdrMessageHelper.GetSamples(16, body);
-
-    Console.WriteLine($"Samples received: {string.Join(" ", body.Select(b => b.ToString("X2")))}");
-
-    const string fileName = "samples.bin";
-    using (var fs = new FileStream(fileName, FileMode.Append, FileAccess.Write, FileShare.Read))
-    using (var bw = new BinaryWriter(fs))
-    {
-        foreach (var sample in samples)
+        private void _udpClient_MessageReceived(object? sender, byte[] e)
         {
-            sw.Write((short)sample);
+            // Змінено тут: 'type', 'code', і 'sequenceNum' замінено на '_'
+            NetSdrMessageHelper.TranslateMessage(e, out _, out _, out _, out byte[] body);
+
+            var samples = NetSdrMessageHelper.GetSamples(16, body);
+
+            Console.WriteLine($"Samples recieved: " + body.Select(b => Convert.ToString(b, toBase: 16)).Aggregate((l, r) => $"{l} {r}"));
+
+            using (FileStream fs = new FileStream("samples.bin", FileMode.Append, FileAccess.Write, FileShare.Read))
+            using (BinaryWriter sw = new BinaryWriter(fs))
+            {
+                foreach (var sample in samples)
+                {
+                    sw.Write((short)sample); //write 16 bit per sample as configured 
+                }
+            }
         }
-    }
-}
 
         private TaskCompletionSource<byte[]> responseTaskSource;
 
