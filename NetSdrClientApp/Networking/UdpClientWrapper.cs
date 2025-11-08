@@ -1,10 +1,18 @@
-﻿using System;
+using System;
 using System.Net;
 using System.Net.Sockets;
 using System.Security.Cryptography;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
+
+public interface IUdpClient
+{
+    event EventHandler<byte[]>? MessageReceived;
+    Task StartListeningAsync();
+    void StopListening();
+    void Exit();
+}
 
 public class UdpClientWrapper : IUdpClient
 {
@@ -35,9 +43,8 @@ public class UdpClientWrapper : IUdpClient
                 Console.WriteLine($"Received from {result.RemoteEndPoint}");
             }
         }
-        catch (OperationCanceledException ex)
+        catch (OperationCanceledException)
         {
-            //empty
         }
         catch (Exception ex)
         {
@@ -61,16 +68,7 @@ public class UdpClientWrapper : IUdpClient
 
     public void Exit()
     {
-        try
-        {
-            _cts?.Cancel();
-            _udpClient?.Close();
-            Console.WriteLine("Stopped listening for UDP messages.");
-        }
-        catch (Exception ex)
-        {
-            Console.WriteLine($"Error while stopping: {ex.Message}");
-        }
+        StopListening();
     }
 
     public override int GetHashCode()
@@ -81,5 +79,26 @@ public class UdpClientWrapper : IUdpClient
         var hash = md5.ComputeHash(Encoding.UTF8.GetBytes(payload));
 
         return BitConverter.ToInt32(hash, 0);
+    }
+
+    public override bool Equals(object? obj)
+    {
+        if (obj == null)
+        {
+            return false;
+        }
+
+        if (ReferenceEquals(this, obj))
+        {
+            return true;
+        }
+
+        var other = obj as UdpClientWrapper;
+        if (other == null)
+        {
+            return false;
+        }
+        
+        return _localEndPoint.Equals(other._localEndPoint);
     }
 }
