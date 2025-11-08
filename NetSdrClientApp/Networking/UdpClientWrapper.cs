@@ -75,6 +75,19 @@ public class UdpClientWrapper : IUdpClient
 
     public override int GetHashCode()
     {
+    public override bool Equals(object? obj)
+{
+    // Reference equality check
+    if (ReferenceEquals(this, obj))
+        return true;
+
+    // Null or different type
+    if (obj is not UdpClientWrapper other)
+        return false;
+
+    return Equals(this.Client, other.Client);
+}
+
         var payload = $"{nameof(UdpClientWrapper)}|{_localEndPoint.Address}|{_localEndPoint.Port}";
 
         using var md5 = MD5.Create();
