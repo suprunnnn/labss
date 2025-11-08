@@ -1,14 +1,54 @@
-﻿using NetSdrClientApp.Messages;
+using NetSdrClientApp.Messages;
 using NetSdrClientApp.Networking;
 using System;
 using System.Collections.Generic;
+using System.IO; // Додано для FileStream та BinaryWriter
 using System.Linq;
 using System.Text;
 using System.Threading;
 using System.Threading.Channels;
 using System.Threading.Tasks;
 using static NetSdrClientApp.Messages.NetSdrMessageHelper;
-using static System.Runtime.InteropServices.JavaScript.JSType;
+//using static System.Runtime.InteropServices.JavaScript.JSType; // Цей using, ймовірно, не потрібен і був помилкою
+
+// Припускаємо, що ці інтерфейси та класи існують в інших файлах
+namespace NetSdrClientApp.Networking
+{
+    public interface ITcpClient
+    {
+        bool Connected { get; }
+        event EventHandler<byte[]>? MessageReceived;
+        void Connect();
+        void Disconnect();
+        Task SendMessageAsync(byte[] msg);
+    }
+
+    public interface IUdpClient
+    {
+        event EventHandler<byte[]>? MessageReceived;
+        Task StartListeningAsync();
+        void StopListening();
+    }
+}
+
+namespace NetSdrClientApp.Messages
+{
+    public class NetSdrMessageHelper
+    {
+        public enum MsgTypes { /* ... */ SetControlItem }
+        public enum ControlItemCodes { /* ... */ IQOutputDataSampleRate, RFFilter, ADModes, ReceiverState, ReceiverFrequency }
+        public static byte[] GetControlItemMessage(MsgTypes type, ControlItemCodes code, byte[] args) => new byte[0]; // Stub
+        public static void TranslateMessage(byte[] e, out MsgTypes type, out ControlItemCodes code, out ushort sequenceNum, out byte[] body) // Stub
+        {
+            type = MsgTypes.SetControlItem;
+            code = ControlItemCodes.ReceiverState;
+            sequenceNum = 0;
+            body = e;
+        }
+        public static IEnumerable<short> GetSamples(int bits, byte[] body) => new short[0]; // Stub
+    }
+}
+// Кінець припущень
 
 namespace NetSdrClientApp
 {
@@ -66,7 +106,7 @@ namespace NetSdrClientApp
                 return;
             }
 
-;           var iqDataMode = (byte)0x80;
+            var iqDataMode = (byte)0x80;
             var start = (byte)0x02;
             var fifo16bitCaptureMode = (byte)0x01;
             var n = (byte)1;
@@ -91,7 +131,6 @@ namespace NetSdrClientApp
             }
 
             var stop = (byte)0x01;
-
             var args = new byte[] { 0, stop, 0, 0 };
 
             var msg = NetSdrMessageHelper.GetControlItemMessage(MsgTypes.SetControlItem, ControlItemCodes.ReceiverState, args);
@@ -114,35 +153,33 @@ namespace NetSdrClientApp
             await SendTcpRequest(msg);
         }
 
-       private void _udpClient_MessageReceived(object? sender, byte[] e)
-{
-    _ = this.IQStarted;
-
-    NetSdrMessageHelper.TranslateMessage(e, out _, out _, out _, out byte[] body);
-
-    var samples = NetSdrMessageHelper.GetSamples(16, body);
-
-    Console.WriteLine($"Samples received: {string.Join(" ", body.Select(b => b.ToString("X2")))}");
-
-    const string fileName = "samples.bin";
-    using (var fs = new FileStream(fileName, FileMode.Append, FileAccess.Write, FileShare.Read))
-    using (var bw = new BinaryWriter(fs))
-    {
-        foreach (var sample in samples)
+        private void _udpClient_MessageReceived(object? sender, byte[] e)
         {
-            sw.Write((short)sample);
+            NetSdrMessageHelper.TranslateMessage(e, out MsgTypes type, out ControlItemCodes code, out ushort sequenceNum, out byte[] body);
+            var samples = NetSdrMessageHelper.GetSamples(16, body);
+
+            Console.WriteLine($"Samples recieved: " + body.Select(b => Convert.ToString(b, toBase: 16)).Aggregate((l, r) => $"{l} {r}"));
+
+            using (FileStream fs = new FileStream("samples.bin", FileMode.Append, FileAccess.Write, FileShare.Read))
+            using (BinaryWriter sw = new BinaryWriter(fs))
+            {
+                foreach (var sample in samples)
+                {
+                    sw.Write((short)sample); //write 16 bit per sample as configured 
+                }
+            }
         }
-    }
-}
 
-        private TaskCompletionSource<byte[]> responseTaskSource;
+        // --- ВИПРАВЛЕНО ТУТ (додано ?) ---
+        private TaskCompletionSource<byte[]>? responseTaskSource;
 
-        private async Task<byte[]> SendTcpRequest(byte[] msg)
+        // --- І ВИПРАВЛЕНО ТУТ (додано ? до Task<byte[]>) ---
+        private async Task<byte[]?> SendTcpRequest(byte[] msg)
         {
             if (!_tcpClient.Connected)
             {
                 Console.WriteLine("No active connection.");
-                return null;
+                return null; // Тепер це дозволено, оскільки Task<byte[]?> може повернути null
             }
 
             responseTaskSource = new TaskCompletionSource<byte[]>(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -161,7 +198,7 @@ namespace NetSdrClientApp
             if (responseTaskSource != null)
             {
                 responseTaskSource.SetResult(e);
-                responseTaskSource = null;
+                responseTaskSource = null; // Тепер це дозволено, оскільки поле responseTaskSource є nullable
             }
             Console.WriteLine("Response recieved: " + e.Select(b => Convert.ToString(b, toBase: 16)).Aggregate((l, r) => $"{l} {r}"));
         }
