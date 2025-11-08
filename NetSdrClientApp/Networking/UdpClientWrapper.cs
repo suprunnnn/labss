@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Net;
 using System.Net.Sockets;
 using System.Security.Cryptography;
@@ -81,5 +81,25 @@ public class UdpClientWrapper : IUdpClient
         var hash = md5.ComputeHash(Encoding.UTF8.GetBytes(payload));
 
         return BitConverter.ToInt32(hash, 0);
+    }
+
+    // --- ДОДАНО ВИПРАВЛЕННЯ ---
+    public override bool Equals(object? obj)
+    {
+        // Перевірка на null і порівняння типів
+        if (obj == null || GetType() != obj.GetType())
+        {
+            return false;
+        }
+
+        // Перевірка на посилальну рівність (оптимізація)
+        if (ReferenceEquals(this, obj))
+        {
+            return true;
+        }
+
+        // Приведення типу та порівняння полів
+        var other = (UdpClientWrapper)obj;
+        return _localEndPoint.Equals(other._localEndPoint);
     }
 }
