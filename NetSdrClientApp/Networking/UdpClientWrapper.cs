@@ -44,28 +44,17 @@ public class UdpClientWrapper : IUdpClient
             Console.WriteLine($"Error receiving message: {ex.Message}");
         }
     }
+    public void StopListening() => Cleanup("Stopped listening for UDP messages.");
 
-    public void StopListening()
+    public void Exit() => Cleanup("Stopped listening for UDP messages.");
+
+    private void Cleanup(string message)
     {
         try
         {
             _cts?.Cancel();
             _udpClient?.Close();
-            Console.WriteLine("Stopped listening for UDP messages.");
-        }
-        catch (Exception ex)
-        {
-            Console.WriteLine($"Error while stopping: {ex.Message}");
-        }
-    }
-
-    public void Exit()
-    {
-        try
-        {
-            _cts?.Cancel();
-            _udpClient?.Close();
-            Console.WriteLine("Stopped listening for UDP messages.");
+            Console.WriteLine(message);
         }
         catch (Exception ex)
         {
@@ -77,7 +66,7 @@ public class UdpClientWrapper : IUdpClient
     {
         var payload = $"{nameof(UdpClientWrapper)}|{_localEndPoint.Address}|{_localEndPoint.Port}";
 
-        using var md5 = MD5.Create();
+        using var md5 = MD5.Create(); // Safe: non-cryptographic, used only for internal hashing (Sonar S4790)
         var hash = md5.ComputeHash(Encoding.UTF8.GetBytes(payload));
 
         return BitConverter.ToInt32(hash, 0);
