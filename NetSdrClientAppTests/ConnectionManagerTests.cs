@@ -68,6 +68,6 @@ public class ConnectionManagerTests
         int expectedPort = 5000;
         string expectedMessage = $"Connected to {expectedAddress}:{expectedPort}";
         string actual = manager.Connect(expectedAddress, expectedPort);
-        Assert.That(actual, Is.EqualTo(expectedMessage));
+        Assert.That(actual, Is.EqualTo(expectedMessage)); 
     }
 }
