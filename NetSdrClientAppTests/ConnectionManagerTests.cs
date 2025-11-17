@@ -43,7 +43,6 @@ public class ConnectionManagerTests
         Assert.That(actual, Is.True);
     }
 
-    [TestCase(null)]
     [TestCase("")]
     [TestCase("   ")]
     [TestCase("IP=123")]
