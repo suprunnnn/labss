@@ -23,7 +23,7 @@ namespace EchoTspServer.Tests
 		[Test]
 		public async Task HandleClientAsync_EchoesDataBack()
 		{
-			// Arrange: створимо два з'єднані TCP сокети
+			// Arrange: Г±ГІГўГ®Г°ГЁГ¬Г® Г¤ГўГ  Г§'ВєГ¤Г­Г Г­Ві TCP Г±Г®ГЄГҐГІГЁ
 			using var listener = new TcpListener(System.Net.IPAddress.Loopback, 0);
 			listener.Start();
 			int port = ((System.Net.IPEndPoint)listener.LocalEndpoint).Port;
